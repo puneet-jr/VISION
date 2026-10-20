@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VisionShield AI</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">&#9676;</span>
+      <div>
+        <h1>VisionShield AI</h1>
+        <p>Detection &rarr; Tracking &rarr; Context &rarr; Threat assessment &rarr; Alerts</p>
+      </div>
+    </div>
+    <div class="status-group">
+      <span id="wsBadge" class="badge badge-off">Live link: connecting</span>
+      <span id="stateBadge" class="badge badge-off">Idle</span>
+    </div>
+  </header>
+
+  <div id="errorBanner" class="error-banner" role="alert" hidden></div>
+
+  <main class="layout">
+    <section class="panel video-panel" aria-labelledby="videoTitle">
+      <div class="panel-head">
+        <h2 id="videoTitle">Live Video</h2>
+        <span id="procInfo" class="muted">No active source</span>
+      </div>
+
+      <div class="controls">
+        <label>Input mode
+          <select id="modeSelect">
+            <option value="video">Recorded video</option>
+            <option value="camera">Live camera</option>
+            <option value="stream">Configured IP stream</option>
+            <option value="image">Upload image</option>
+          </select>
+        </label>
+        <label id="videoPick">Video file
+          <select id="videoSelect"></select>
+        </label>
+        <label id="videoUpload" class="file-btn">Upload video
+          <input id="videoFile" type="file" accept="video/*" hidden>
+        </label>
+        <label id="imagePick" class="file-btn" hidden>Choose image
+          <input id="imageFile" type="file" accept="image/*" hidden>
+        </label>
+        <button id="startBtn" class="btn btn-primary">Start</button>
+        <button id="stopBtn" class="btn btn-danger" disabled>Stop</button>
+      </div>
+
+      <div class="video-frame">
+        <img id="videoImg" alt="Annotated surveillance feed" hidden>
+        <div id="videoMsg" class="video-msg">Select a source and press Start.</div>
+      </div>
+      <p class="hint">Boxes are coloured by threat level: <span class="dot low"></span>LOW
+        <span class="dot medium"></span>MEDIUM <span class="dot high"></span>HIGH.
+        Shaded polygons are monitored zones. Speeds are image-space (px/s), not metres per second.</p>
+    </section>
+
+    <section class="panel summary-panel" aria-labelledby="sumTitle">
+      <div class="panel-head"><h2 id="sumTitle">Threat Summary</h2>
+        <span id="sessionInfo" class="muted"></span></div>
+      <div class="counts">
+        <div class="count low"><span id="cntLow">0</span><small>LOW (live)</small></div>
+        <div class="count medium"><span id="cntMed">0</span><small>MEDIUM (live)</small></div>
+        <div class="count high"><span id="cntHigh">0</span><small>HIGH (live)</small></div>
+      </div>
+      <div class="charts">
+        <div class="chart-box"><canvas id="levelChart" aria-label="Events by level"></canvas></div>
+        <div class="chart-box wide"><canvas id="timelineChart" aria-label="Events per hour"></canvas></div>
+      </div>
+      <p class="muted small">Charts show stored event history. "Live" counts are objects on the current frame.</p>
+    </section>
+
+    <section class="panel telemetry-panel" aria-labelledby="telTitle">
+      <div class="panel-head"><h2 id="telTitle">Object Telemetry</h2>
+        <span id="objInfo" class="muted"></span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>ID</th><th>Class</th><th>Conf.</th><th>Speed (px/s)</th><th>Direction</th>
+            <th>Zone</th><th>Dwell (s)</th><th>Score</th><th>Level</th><th>Why</th>
+          </tr></thead>
+          <tbody id="telemetryBody"><tr><td colspan="10" class="empty">No objects</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel events-panel" aria-labelledby="evTitle">
+      <div class="panel-head">
+        <h2 id="evTitle">Event History</h2>
+        <div class="inline-controls">
+          <label>Level
+            <select id="levelFilter">
+              <option value="">All</option><option>HIGH</option><option>MEDIUM</option><option>LOW</option>
+            </select>
+          </label>
+          <button id="refreshBtn" class="btn">Refresh</button>
+        </div>
+      </div>
+      <div class="table-wrap tall">
+        <table>
+          <thead><tr>
+            <th>Time</th><th>Level</th><th>Score</th><th>Object</th><th>Zone</th>
+            <th>Movement</th><th>Explanation</th>
+          </tr></thead>
+          <tbody id="eventsBody"><tr><td colspan="7" class="empty">No events yet</td></tr></tbody>
+        </table>
+      </div>
+      <div class="pager">
+        <button id="prevBtn" class="btn">Prev</button>
+        <span id="pageInfo" class="muted"></span>
+        <button id="nextBtn" class="btn">Next</button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">Local prototype &mdash; no authentication; secure before exposing to a network.
+    Tracking IDs identify objects within a session only. Scores use configurable engineering defaults,
+    not validated threat probabilities.</footer>
+
+  <script src="/static/js/dashboard.js"></script>
+</body>
+</html>

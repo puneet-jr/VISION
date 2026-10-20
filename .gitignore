@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+*.db
+*.pt
+data/videos/*
+data/images/*
+data/datasets/*
+!data/videos/.gitkeep
+!data/images/.gitkeep
+!data/datasets/.gitkeep
+config/zones.json
+outputs/
+.idea/
+.vscode/

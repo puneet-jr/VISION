@@ -1,0 +1,11 @@
+{
+  "reference_size": [1280, 720],
+  "zones": [
+    {
+      "id": "zone-1",
+      "name": "Restricted Area A",
+      "restricted": true,
+      "polygon": [[640, 180], [1200, 180], [1200, 680], [640, 680]]
+    }
+  ]
+}
