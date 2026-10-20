@@ -52,6 +52,7 @@ class YoloDetector:
         self._track_lock = threading.Lock()
         self._detect_lock = threading.Lock()
         self._load_lock = threading.Lock()
+        self._tracking_used = False
 
     def _load(self) -> Any:
         try:
@@ -69,6 +70,20 @@ class YoloDetector:
         with self._load_lock:
             if self._track_model is None:
                 self._track_model = self._load()
+
+    def prime(self) -> None:
+        """Load the model and run one dummy inference so the first real session starts fast.
+
+        Skipped if tracking has already been used (a session is live), so it can never disturb
+        real tracker state."""
+        self.warmup()
+        with self._track_lock:
+            if self._tracking_used:
+                return
+            dummy = np.zeros((self._imgsz, self._imgsz, 3), dtype=np.uint8)
+            self._track_model.track(dummy, persist=True, tracker="bytetrack.yaml", conf=self._conf,
+                                    imgsz=self._imgsz, device=self._device, verbose=False)
+            self._track_model.predictor = None  # discard the dummy's tracker state
 
     def _tracker_model(self) -> Any:
         self.warmup()
@@ -91,6 +106,7 @@ class YoloDetector:
               tracker_config: str) -> list[Detection]:
         model = self._tracker_model()
         with self._track_lock:
+            self._tracking_used = True
             results = model.track(frame, persist=True, tracker=tracker_config, conf=self._conf,
                                   iou=self._iou, imgsz=self._imgsz, device=self._device,
                                   verbose=False)

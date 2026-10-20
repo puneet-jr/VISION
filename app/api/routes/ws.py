@@ -38,3 +38,37 @@ async def events_socket(ws: WebSocket) -> None:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         hub.unsubscribe(queue)
+
+
+@router.websocket("/ws/camera")
+async def camera_socket(ws: WebSocket) -> None:
+    """Receives JPEG frames from a browser camera (phone or laptop) for the active browser session."""
+    service = ws.app.state.service
+    await ws.accept()
+    source = service.browser_source
+    if source is None or source.closed:
+        await ws.send_json({"type": "error", "message": "no browser-camera session is active"})
+        await ws.close(code=4403)
+        return
+    sent = 0
+    try:
+        await ws.send_json({"type": "ready"})
+        while not source.closed:
+            try:
+                data = await asyncio.wait_for(ws.receive_bytes(), timeout=2.0)
+            except asyncio.TimeoutError:
+                continue  # re-check whether the session was stopped
+            source.push(data)
+            sent += 1
+            if sent % 15 == 0:
+                await ws.send_json({"type": "ack", "frames": source.frames_received})
+        await ws.send_json({"type": "stopped"})
+    except WebSocketDisconnect:
+        pass
+    except (RuntimeError, KeyError):  # text frame instead of bytes / closed socket
+        logger.debug("camera socket closed", exc_info=True)
+    finally:
+        try:
+            await ws.close()
+        except RuntimeError:
+            pass

@@ -17,7 +17,9 @@ from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException  # base class: also covers router 404/405
 
-from app.api.routes import analytics, events, health, objects, sessions, stream, uploads, ws, zones
+from app.api.routes import (
+    analytics, events, health, network, objects, recordings, sessions, stream, uploads, ws, zones,
+)
 from app.core.config import Settings, get_settings
 from app.core.exceptions import (
     ConfigError, InvalidFrameError, ModelLoadError, SessionConflictError, SessionNotFoundError,
@@ -72,6 +74,7 @@ def create_app(
         orphans = SessionRepository(db).close_orphans()
         if orphans:
             logger.warning("marked %d interrupted session(s) as failed", orphans)
+        service.warmup_async()  # model loads in the background; the UI shows its state
         logger.info("VisionShield AI ready (local prototype - no authentication)")
         yield
         await run_in_threadpool(service.shutdown)  # stops workers, releases camera and model
@@ -102,7 +105,8 @@ def create_app(
         logger.exception("unhandled error")
         return _error(500, "internal_error", "internal server error")
 
-    for module in (health, sessions, objects, events, zones, analytics, stream, uploads, ws):
+    for module in (health, sessions, objects, events, zones, analytics, stream, uploads, network,
+                   recordings, ws):
         app.include_router(module.router)
 
     app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
@@ -110,6 +114,10 @@ def create_app(
     @app.get("/favicon.ico", include_in_schema=False)
     def favicon() -> Response:
         return Response(status_code=204)
+
+    @app.get("/phone", include_in_schema=False)
+    def phone_page() -> FileResponse:
+        return FileResponse(WEB_DIR / "templates" / "phone.html")
 
     @app.get("/", include_in_schema=False)
     def dashboard() -> FileResponse:

@@ -15,8 +15,9 @@ class SessionCreate(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    source_type: Literal["camera", "video", "stream"]
+    source_type: Literal["camera", "video", "stream", "browser"]
     video_name: Optional[str] = None
+    record: Optional[bool] = None  # None = use the RECORD_SESSIONS default
 
     @field_validator("video_name")
     @classmethod
@@ -48,6 +49,8 @@ class SessionOut(BaseModel):
     frames_processed: int
     error: Optional[str] = None
     live_fps: Optional[float] = None
+    recording_name: Optional[str] = None
+    recording_seconds: Optional[float] = None
 
 
 class SessionListOut(BaseModel):
@@ -59,3 +62,11 @@ class SourcesOut(BaseModel):
     camera_index: int
     stream_configured: bool
     videos: list[str]
+
+
+class RecordingOut(BaseModel):
+    session_id: int
+    source_label: str
+    started_at: UtcDatetime
+    seconds: Optional[float] = None
+    size_bytes: int

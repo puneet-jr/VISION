@@ -42,7 +42,7 @@ def list_sessions(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, g
 @router.post("/sessions", response_model=SessionOut, status_code=status.HTTP_201_CREATED)
 def start_session(body: SessionCreate,
                   service: SurveillanceService = Depends(get_service)) -> SessionOut:
-    row = service.start_session(body.source_type, body.video_name)
+    row = service.start_session(body.source_type, body.video_name, body.record)
     return _to_out(row, service)
 
 

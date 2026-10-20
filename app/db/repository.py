@@ -36,7 +36,8 @@ class SessionRepository:
                              .order_by(SurveillanceSession.id.desc()).limit(limit).offset(offset)).all()
             return list(rows), total
 
-    def finish(self, session_id: int, status: str, frames: int, error: Optional[str] = None
+    def finish(self, session_id: int, status: str, frames: int, error: Optional[str] = None,
+               recording_name: Optional[str] = None, recording_seconds: Optional[float] = None
                ) -> Optional[SurveillanceSession]:
         with self._db.session() as s:
             row = s.get(SurveillanceSession, session_id)
@@ -44,7 +45,21 @@ class SessionRepository:
                 return None
             row.status, row.frames_processed, row.error = status, frames, error
             row.ended_at = utcnow()
+            if recording_name:
+                row.recording_name, row.recording_seconds = recording_name, recording_seconds
             return row
+
+    def with_recordings(self, limit: int = 50) -> list[SurveillanceSession]:
+        with self._db.session() as s:
+            return list(s.scalars(select(SurveillanceSession)
+                                  .where(SurveillanceSession.recording_name.is_not(None))
+                                  .order_by(SurveillanceSession.id.desc()).limit(limit)).all())
+
+    def clear_recording(self, session_id: int) -> None:
+        with self._db.session() as s:
+            row = s.get(SurveillanceSession, session_id)
+            if row is not None:
+                row.recording_name, row.recording_seconds = None, None
 
     def close_orphans(self) -> int:
         """Sessions left 'running' by a crash cannot be running after a restart."""

@@ -28,6 +28,8 @@ class SurveillanceSession(Base):
     ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     frames_processed: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    recording_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    recording_seconds: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     events: Mapped[list["ThreatEvent"]] = relationship(back_populates="session",
                                                        cascade="all, delete-orphan")

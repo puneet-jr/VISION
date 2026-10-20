@@ -38,6 +38,17 @@ class Database:
 
     def init(self) -> None:
         Base.metadata.create_all(self.engine)
+        self._add_missing_columns()
+
+    def _add_missing_columns(self) -> None:
+        """Tiny forward migration: databases created by earlier versions lack newer columns."""
+        wanted = {"sessions": {"recording_name": "VARCHAR(255)", "recording_seconds": "FLOAT"}}
+        with self.engine.begin() as conn:
+            for table, columns in wanted.items():
+                have = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))}
+                for name, ddl in columns.items():
+                    if name not in have:
+                        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
 
     @contextmanager
     def session(self) -> Iterator[Session]:

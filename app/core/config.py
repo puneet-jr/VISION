@@ -83,6 +83,23 @@ class Settings(BaseSettings):
     zone_exit_grace_s: float = Field(2.0, ge=0)
     approach_min_observations: int = Field(5, ge=2)
 
+    # Behaviour rules (deterministic, configurable)
+    behavior_loiter_s: float = Field(6.0, gt=0)
+    behavior_unattended_s: float = Field(8.0, gt=0)
+    behavior_crowd_count: int = Field(3, ge=2)
+    behavior_run_speed_diag_per_s: float = Field(0.18, gt=0)
+
+    # Phone / browser camera
+    allow_browser_camera: bool = True
+    public_https_port: Optional[int] = None  # set by scripts/run_demo.py when LAN HTTPS is on
+
+    # Session recording (annotated video saved as MJPEG .avi)
+    record_sessions: bool = True
+    recordings_dir: Path = Path("data/recordings")
+    recording_keep: int = Field(10, ge=1, le=500)
+    recording_max_mb: int = Field(300, ge=1)
+    recording_fps: float = Field(10.0, gt=0, le=60)
+
     # Alerts
     alert_cooldown_s: float = Field(10.0, ge=0)
     alert_min_level: str = "MEDIUM"
@@ -144,6 +161,10 @@ class Settings(BaseSettings):
         return self.resolve(self.video_dir)
 
     @property
+    def recordings_path(self) -> Path:
+        return self.resolve(self.recordings_dir)
+
+    @property
     def database_file(self) -> Path:
         return self.resolve(self.database_path)
 
@@ -175,6 +196,16 @@ class Settings(BaseSettings):
             "dwell_ref_s": self.dwell_ref_s,
             "alert_cooldown_s": self.alert_cooldown_s,
             "alert_min_level": self.alert_min_level,
+            "behavior": {
+                "loiter_s": self.behavior_loiter_s,
+                "unattended_s": self.behavior_unattended_s,
+                "crowd_count": self.behavior_crowd_count,
+                "run_speed_diag_per_s": self.behavior_run_speed_diag_per_s,
+            },
+            "browser_camera_enabled": self.allow_browser_camera,
+            "recording": {"enabled_by_default": self.record_sessions, "fps": self.recording_fps,
+                          "keep_last": self.recording_keep, "max_mb": self.recording_max_mb},
+            "detection": {"confidence": self.detection_conf, "iou": self.detection_iou, "imgsz": self.inference_imgsz},
             "levels": {"LOW": "0-30", "MEDIUM": "31-60", "HIGH": "61-100"},
         }
 

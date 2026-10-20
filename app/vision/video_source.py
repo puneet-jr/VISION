@@ -24,6 +24,7 @@ class SourceKind(str, Enum):
     CAMERA = "camera"
     VIDEO = "video"
     STREAM = "stream"
+    BROWSER = "browser"  # phone / laptop camera pushed from a web page
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,8 @@ class SourceSpec:
             return f"camera:{self.camera_index}"
         if self.kind is SourceKind.VIDEO:
             return f"video:{self.path.name if self.path else '?'}"
+        if self.kind is SourceKind.BROWSER:
+            return "browser:camera"
         return "stream:configured"
 
 

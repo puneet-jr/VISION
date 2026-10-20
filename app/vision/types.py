@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from app.assessment.threat_scorer import ThreatAssessment
+
+if TYPE_CHECKING:  # avoids an import cycle (behavior imports these types)
+    from app.assessment.behavior import BehaviorTag
 from app.vision.motion_analyzer import MotionState, UNKNOWN_MOTION
 from app.vision.zone_analyzer import ZoneContext
 
@@ -49,6 +52,7 @@ class ObjectState:
     primary_zone: Optional[ZoneContext] = None
     dwell_s: Optional[float] = None
     assessment: Optional[ThreatAssessment] = None
+    behaviors: tuple["BehaviorTag", ...] = field(default_factory=tuple)
 
     @property
     def track_id(self) -> Optional[int]:
@@ -61,6 +65,7 @@ class ObjectState:
     def movement_context(self) -> dict:
         ctx = self.motion.to_dict()
         ctx["dwell_s"] = None if self.dwell_s is None else round(self.dwell_s, 2)
+        ctx["behaviors"] = [b.code for b in self.behaviors]
         return ctx
 
     def to_dict(self) -> dict:
@@ -85,4 +90,6 @@ class ObjectState:
             "score": a.score if a else None,
             "level": a.level.value if a else None,
             "factors": a.factors_dict() if a else {},
+            "explanation": a.explanation if a else "",
+            "behaviors": [b.to_dict() for b in self.behaviors],
         }

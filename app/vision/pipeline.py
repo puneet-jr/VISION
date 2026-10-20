@@ -1,15 +1,17 @@
-"""End-to-end pipeline: pre-process -> detect -> track -> context -> score -> alert -> annotate."""
+"""End-to-end pipeline: pre-process -> detect -> track -> context -> behaviour -> score -> alert."""
 from __future__ import annotations
 
 import logging
 import math
-from dataclasses import dataclass, field
+import threading
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Iterable, Optional
 
 import numpy as np
 
 from app.assessment.alert_manager import AlertEvent, AlertManager, EventSink
+from app.assessment.behavior import BehaviorAnalyzer, BehaviorConfig
 from app.assessment.threat_scorer import RiskLevel, ThreatInputs, ThreatScorer, ThreatWeights
 from app.core.config import Settings
 from app.vision import annotator
@@ -34,7 +36,8 @@ class FrameResult:
     size: tuple[int, int]
     objects: list[ObjectState]
     events: list[AlertEvent]
-    annotated: np.ndarray
+    annotated: np.ndarray            # VisionShield view
+    plain: Optional[np.ndarray] = None  # "typical detector" view (boxes + labels only)
 
 
 @dataclass
@@ -51,14 +54,19 @@ class ImageResult:
 
 
 class ZoneProvider:
-    """Scales reference-resolution zones to the actual processing frame size (cached)."""
+    """Holds the zones (reference-frame coordinates) and scales them to the processing size.
+
+    Zones can be replaced while a session runs (live zone editing); the pipeline asks for the
+    scaled analyzer on every frame, so a change applies on the next frame.
+    """
 
     def __init__(self, zones: Iterable[Zone], ref_size: tuple[float, float],
                  near_fraction: float) -> None:
-        self._base = ZoneAnalyzer(zones, near_distance_px=0.0)
-        self._ref = ref_size
+        self._lock = threading.Lock()
         self._near_fraction = near_fraction
         self._cache: dict[tuple[int, int], ZoneAnalyzer] = {}
+        self._base = ZoneAnalyzer(zones, near_distance_px=0.0)
+        self._ref = ref_size
 
     @property
     def zones(self) -> tuple[Zone, ...]:
@@ -69,12 +77,20 @@ class ZoneProvider:
     def reference_size(self) -> tuple[float, float]:
         return self._ref
 
+    def set_zones(self, zones: Iterable[Zone], ref_size: Optional[tuple[float, float]] = None) -> None:
+        with self._lock:
+            self._base = ZoneAnalyzer(zones, near_distance_px=0.0)
+            if ref_size is not None:
+                self._ref = ref_size
+            self._cache = {}
+
     def for_size(self, width: int, height: int) -> ZoneAnalyzer:
-        key = (width, height)
-        if key not in self._cache:
-            near = self._near_fraction * math.hypot(width, height)
-            self._cache[key] = self._base.scaled(width / self._ref[0], height / self._ref[1], near)
-        return self._cache[key]
+        with self._lock:
+            key = (width, height)
+            if key not in self._cache:
+                near = self._near_fraction * math.hypot(width, height)
+                self._cache[key] = self._base.scaled(width / self._ref[0], height / self._ref[1], near)
+            return self._cache[key]
 
 
 def _contextualise(zones: ZoneAnalyzer, centroid: tuple[float, float]
@@ -85,6 +101,27 @@ def _contextualise(zones: ZoneAnalyzer, centroid: tuple[float, float]
     inside = [c for c in contexts if c.status is ZoneStatus.INSIDE]
     display = inside[0] if inside else (min(contexts, key=lambda c: c.distance_px) if contexts else None)
     return contexts, nearest_restricted, display
+
+
+def _restricted_distance(state: ObjectState) -> Optional[float]:
+    nearest = ZoneAnalyzer.nearest_restricted(state.zone_contexts)
+    return nearest.distance_px if nearest else None
+
+
+def _score(scorer: ThreatScorer, state: ObjectState, diag: float, temporal: bool):
+    det = state.detection
+    adjustment = BehaviorAnalyzer.risk_adjustment(scorer.class_risk(det.class_name), state.behaviors)
+    return scorer.score(ThreatInputs(
+        class_name=det.class_name,
+        confidence=min(1.0, max(0.0, det.confidence)),
+        frame_diagonal_px=diag,
+        # With a single observation (or a still image) speed is unknown rather than zero.
+        speed_px_s=state.motion.speed_px_s if temporal and state.motion.observations >= 2 else None,
+        approaching=state.motion.approaching if temporal else None,
+        zone_distance_px=_restricted_distance(state),
+        dwell_s=state.dwell_s if temporal else None,
+        risk_adjustment=adjustment,
+    ))
 
 
 class VisionPipeline:
@@ -99,7 +136,9 @@ class VisionPipeline:
         preprocessor: FramePreprocessor,
         motion: MotionAnalyzer,
         presence: ZonePresenceTracker,
+        behavior: Optional[BehaviorAnalyzer] = None,
         stale_after_s: float = 5.0,
+        render_plain: bool = True,
     ) -> None:
         self.tracker = tracker
         self.zone_provider = zone_provider
@@ -108,7 +147,9 @@ class VisionPipeline:
         self.preprocessor = preprocessor
         self.motion = motion
         self.presence = presence
+        self.behavior = behavior or BehaviorAnalyzer()
         self.stale_after_s = stale_after_s
+        self.render_plain = render_plain
         self._frames = 0
 
     def process_frame(self, frame: np.ndarray, frame_id: int, timestamp: float) -> FrameResult:
@@ -118,12 +159,20 @@ class VisionPipeline:
         zones = self.zone_provider.for_size(width, height)
         diag = math.hypot(width, height)
 
+        # 1. observe: tracking + motion + zone context for every tracked object
         detections = self.tracker.update(image, frame_id, timestamp)
+        observed: list[tuple[ObjectState, list[str]]] = [
+            self._observe(det, zones, timestamp) for det in detections]
+
+        # 2. behaviours need the whole scene (unattended items, crowding)
+        tags = self.behavior.analyze([s for s, _ in observed], timestamp, diag)
+
+        # 3. score with context-adjusted risk, then alert
         objects: list[ObjectState] = []
         events: list[AlertEvent] = []
-        for det in detections:
-            assert det.track_id is not None
-            state, entered = self._analyse(det, zones, diag, timestamp)
+        for state, entered in observed:
+            state = replace(state, behaviors=tags.get(state.track_id, ()))
+            state = replace(state, assessment=_score(self.scorer, state, diag, temporal=True))
             objects.append(state)
             events.extend(self.alerts.process(state, entered, timestamp))
 
@@ -133,14 +182,17 @@ class VisionPipeline:
             self.presence.prune(timestamp, self.stale_after_s)
             self.alerts.prune(timestamp, self.stale_after_s)
 
+        plain = None
+        if self.render_plain:
+            plain = image.copy()
+            annotator.draw_plain(plain, objects)
         annotator.draw_zones(image, zones.zones)
         annotator.draw_objects(image, objects)
         annotator.draw_banner(image, f"frame {frame_id}  t={timestamp:6.1f}s  objects={len(objects)}")
         events.sort(key=lambda e: -e.priority)
-        return FrameResult(frame_id, timestamp, (width, height), objects, events, image)
+        return FrameResult(frame_id, timestamp, (width, height), objects, events, image, plain)
 
-    def _analyse(self, det: Detection, zones: ZoneAnalyzer, diag: float, t: float
-                 ) -> tuple[ObjectState, list[str]]:
+    def _observe(self, det: Detection, zones: ZoneAnalyzer, t: float) -> tuple[ObjectState, list[str]]:
         tid = det.track_id
         assert tid is not None
         contexts, restricted, display = _contextualise(zones, det.centroid)
@@ -148,18 +200,7 @@ class VisionPipeline:
         entered = self.presence.update(tid, t, inside_ids)
         motion = self.motion.update(tid, t, det.centroid, restricted.distance_px if restricted else None)
         dwell = self.presence.max_dwell_s(tid, t)
-        assessment = self.scorer.score(ThreatInputs(
-            class_name=det.class_name,
-            confidence=min(1.0, max(0.0, det.confidence)),
-            frame_diagonal_px=diag,
-            # With a single observation speed is unknown rather than zero.
-            speed_px_s=motion.speed_px_s if motion.observations >= 2 else None,
-            approaching=motion.approaching,
-            zone_distance_px=restricted.distance_px if restricted else None,
-            dwell_s=dwell,
-        ))
-        state = ObjectState(det, motion, contexts, display, dwell, assessment)
-        return state, entered
+        return ObjectState(det, motion, contexts, display, dwell), entered
 
 
 class ImageAnalyzer:
@@ -181,15 +222,9 @@ class ImageAnalyzer:
         diag = math.hypot(width, height)
         objects: list[ObjectState] = []
         for det in self.detector.detect(image, 0, 0.0):
-            contexts, restricted, display = _contextualise(zones, det.centroid)
-            assessment = self.scorer.score(ThreatInputs(
-                class_name=det.class_name,
-                confidence=min(1.0, max(0.0, det.confidence)),
-                frame_diagonal_px=diag,
-                zone_distance_px=restricted.distance_px if restricted else None,
-            ))
-            objects.append(ObjectState(det, zone_contexts=contexts, primary_zone=display,
-                                       assessment=assessment))
+            contexts, _restricted, display = _contextualise(zones, det.centroid)
+            state = ObjectState(det, zone_contexts=contexts, primary_zone=display)
+            objects.append(replace(state, assessment=_score(self.scorer, state, diag, temporal=False)))
         annotator.draw_zones(image, zones.zones)
         annotator.draw_objects(image, objects, trajectories=False)
         return ImageResult((width, height), objects, image, list(zones.zones))
@@ -213,6 +248,15 @@ def build_zone_provider(settings: Settings, zones_path: Optional[Path] = None) -
     return ZoneProvider(zones, ref_size, settings.zone_near_fraction)
 
 
+def build_behavior(settings: Settings) -> BehaviorAnalyzer:
+    return BehaviorAnalyzer(BehaviorConfig(
+        loiter_s=settings.behavior_loiter_s,
+        unattended_s=settings.behavior_unattended_s,
+        crowd_count=settings.behavior_crowd_count,
+        run_speed_diag_per_s=settings.behavior_run_speed_diag_per_s,
+    ))
+
+
 def build_pipeline(
     settings: Settings,
     detector: ObjectDetector,
@@ -220,6 +264,7 @@ def build_pipeline(
     session_id: Optional[int] = None,
     sinks: Iterable[EventSink] = (),
     tracker: Optional[ObjectTracker] = None,
+    render_plain: bool = True,
 ) -> VisionPipeline:
     tracker = tracker or UltralyticsTracker(detector, settings.tracker_config)
     alerts = AlertManager(
@@ -240,5 +285,7 @@ def build_pipeline(
             min_motion_px=3.0,
         ),
         presence=ZonePresenceTracker(settings.zone_exit_grace_s),
+        behavior=build_behavior(settings),
         stale_after_s=settings.track_stale_s,
+        render_plain=render_plain,
     )

@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Callable, Iterable, Optional
 
+from app.assessment.behavior import INTRUSION
 from app.assessment.threat_scorer import RiskLevel
 from app.vision.types import ObjectState
 
@@ -126,12 +127,13 @@ class AlertManager:
                 f"{obj.class_name} #{obj.track_id} entered zone '{name}'"))
 
         level_event, change = self._level_event(obj, state, t, wall)
-        if level_event is not None:
-            if events:
-                # Same frame as a zone entry: report once, carrying the level change in the reason.
-                events[0].reason += f"; {change}"
-            else:
-                events.append(level_event)
+        if level_event is not None and not events:
+            events.append(level_event)
+        elif level_event is not None:
+            # Same frame as a zone entry: report once, carrying the level change in the reason.
+            events[0].reason += f"; {change}"
+        if events and events[0].event_type == EVENT_ZONE_ENTRY:
+            events[0].reason += self._behaviour_suffix(obj, skip={INTRUSION})  # entry already implies it
 
         events.sort(key=lambda e: -e.priority)
         for event in events:
@@ -164,8 +166,14 @@ class AlertManager:
                   f"(score {obj.assessment.score:.1f})")
         event = self._make_event(obj, wall, t, EVENT_THREAT_LEVEL,
                                  zone.zone_id if zone else None, zone.zone_name if zone else None,
-                                 f"{obj.class_name} #{obj.track_id} {change}")
+                                 f"{obj.class_name} #{obj.track_id} {change}{self._behaviour_suffix(obj)}")
         return event, change
+
+    @staticmethod
+    def _behaviour_suffix(obj: ObjectState, skip: frozenset | set = frozenset()) -> str:
+        """" - loitering, moving fast": what the object is doing, for the alert text."""
+        labels = [b.label.lower() for b in obj.behaviors if b.code not in skip]
+        return " - " + ", ".join(labels) if labels else ""
 
     def _make_event(self, obj: ObjectState, wall: datetime, t: float, event_type: str,
                     zone_id: Optional[str], zone_name: Optional[str], reason: str) -> AlertEvent:

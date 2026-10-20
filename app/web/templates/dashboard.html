@@ -4,126 +4,308 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>VisionShield AI</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/css/styles.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
-      <span class="logo" aria-hidden="true">&#9676;</span>
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 5 7v8c0 7 4.6 12.3 11 14 6.4-1.7 11-7 11-14V7L16 3Z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="16" cy="15" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 9v2M16 19v2M10 15h2M20 15h2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       <div>
         <h1>VisionShield AI</h1>
-        <p>Detection &rarr; Tracking &rarr; Context &rarr; Threat assessment &rarr; Alerts</p>
+        <p>Context-aware video threat assessment</p>
       </div>
     </div>
-    <div class="status-group">
-      <span id="wsBadge" class="badge badge-off">Live link: connecting</span>
+    <nav class="subnav" aria-label="Sections">
+      <a href="#live"><span>1</span> Live</a>
+      <a href="#understand"><span>2</span> Understand</a>
+      <a href="#history"><span>3</span> History &amp; recordings</a>
+      <a href="#guide"><span>4</span> Guide &amp; settings</a>
+    </nav>
+    <div class="top-actions">
+      <button id="quickDemoBtn" class="btn btn-accent" title="Run a sample video with the side-by-side view">&#9654; Quick demo</button>
+      <span id="recBadge" class="rec" hidden title="This session is being recorded">&#9679; REC</span>
+      <span id="wsBadge" class="badge badge-off" title="Connection used for live updates">Live link: connecting</span>
       <span id="stateBadge" class="badge badge-off">Idle</span>
     </div>
   </header>
 
   <div id="errorBanner" class="error-banner" role="alert" hidden></div>
 
-  <main class="layout">
-    <section class="panel video-panel" aria-labelledby="videoTitle">
-      <div class="panel-head">
-        <h2 id="videoTitle">Live Video</h2>
-        <span id="procInfo" class="muted">No active source</span>
-      </div>
+  <section class="pipeline" aria-label="Processing pipeline (live counters)">
+    <div class="step" id="stepDetect" data-term="step_detect"><span class="step-n">1</span><div><b>Detect</b><small>what is visible</small></div><output id="pDetect">0</output></div>
+    <div class="arrow" aria-hidden="true">&rsaquo;</div>
+    <div class="step" id="stepTrack" data-term="step_track"><span class="step-n">2</span><div><b>Track</b><small>same object over time</small></div><output id="pTrack">0</output></div>
+    <div class="arrow" aria-hidden="true">&rsaquo;</div>
+    <div class="step" id="stepContext" data-term="step_context"><span class="step-n">3</span><div><b>Context</b><small>zones &amp; movement</small></div><output id="pContext">0</output></div>
+    <div class="arrow" aria-hidden="true">&rsaquo;</div>
+    <div class="step" id="stepBehavior" data-term="step_behavior"><span class="step-n">4</span><div><b>Behaviour</b><small>what it is doing</small></div><output id="pBehavior">0</output></div>
+    <div class="arrow" aria-hidden="true">&rsaquo;</div>
+    <div class="step" id="stepScore" data-term="step_score"><span class="step-n">5</span><div><b>Score</b><small>explainable 0&ndash;100</small></div><output id="pScore">&ndash;</output></div>
+    <div class="arrow" aria-hidden="true">&rsaquo;</div>
+    <div class="step" id="stepAlert" data-term="step_alert"><span class="step-n">6</span><div><b>Alert</b><small>what needs attention</small></div><output id="pAlert">0</output></div>
+  </section>
 
-      <div class="controls">
-        <label>Input mode
-          <select id="modeSelect">
-            <option value="video">Recorded video</option>
-            <option value="camera">Live camera</option>
-            <option value="stream">Configured IP stream</option>
-            <option value="image">Upload image</option>
-          </select>
-        </label>
-        <label id="videoPick">Video file
-          <select id="videoSelect"></select>
-        </label>
-        <label id="videoUpload" class="file-btn">Upload video
-          <input id="videoFile" type="file" accept="video/*" hidden>
-        </label>
-        <label id="imagePick" class="file-btn" hidden>Choose image
-          <input id="imageFile" type="file" accept="image/*" hidden>
-        </label>
-        <button id="startBtn" class="btn btn-primary">Start</button>
-        <button id="stopBtn" class="btn btn-danger" disabled>Stop</button>
-      </div>
+  <main class="page">
+    <!-- ================= 1. LIVE ================= -->
+    <section id="live" class="section">
+      <h2 class="sec-title"><span class="num">1</span> Live <small>choose an input, press Start, and compare plain detection with VisionShield</small></h2>
+      <div class="layout">
+        <section class="card stage" aria-labelledby="stageTitle">
+          <div class="card-head">
+            <h3 id="stageTitle">Live analysis</h3>
+            <span id="procInfo" class="muted">No active source</span>
+          </div>
 
-      <div class="video-frame">
-        <img id="videoImg" alt="Annotated surveillance feed" hidden>
-        <div id="videoMsg" class="video-msg">Select a source and press Start.</div>
+          <div class="toolbar">
+            <label>Source <span class="help" data-term="source"></span>
+              <select id="modeSelect">
+                <option value="video">Recorded video</option>
+                <option value="browser">Phone / browser camera</option>
+                <option value="camera">Server webcam</option>
+                <option value="stream">IP camera stream</option>
+                <option value="image">Upload image</option>
+              </select>
+            </label>
+            <label id="videoPick">Video file
+              <select id="videoSelect"></select>
+            </label>
+            <label id="videoUpload" class="file-btn">Upload video
+              <input id="videoFile" type="file" accept="video/*" hidden>
+            </label>
+            <label id="imagePick" class="file-btn" hidden>Choose image
+              <input id="imageFile" type="file" accept="image/*" hidden>
+            </label>
+            <label class="check" id="recordPick" title="Save the annotated video so you can replay or download it later"><input id="recordChk" type="checkbox" checked> Record session</label>
+            <button id="startBtn" class="btn btn-primary">Start</button>
+            <button id="stopBtn" class="btn btn-danger" disabled>Stop</button>
+            <span class="spacer"></span>
+            <div class="segmented" role="group" aria-label="View">
+              <button data-view="compare" class="seg active" title="Typical detector and VisionShield side by side">Compare</button>
+              <button data-view="full" class="seg" title="Only the VisionShield view">VisionShield</button>
+              <button data-view="plain" class="seg" title="Only boxes and labels, as a plain detector shows">Detector only</button>
+            </div>
+            <button id="zoneBtn" class="btn" title="Draw a restricted zone on the live video">Edit zone</button>
+          </div>
+          <p id="sourceHint" class="source-hint"></p>
+
+          <div id="zoneBar" class="zone-bar" hidden>
+            <b>Draw a zone:</b> click on the VisionShield view to add points (at least 3).
+            <input id="zoneName" type="text" maxlength="40" placeholder="Zone name" value="Restricted Area">
+            <button id="zoneUndo" class="btn btn-sm">Undo</button>
+            <button id="zoneSave" class="btn btn-sm btn-primary">Add zone</button>
+            <button id="zoneClear" class="btn btn-sm">Remove all zones</button>
+            <button id="zoneReset" class="btn btn-sm">Reset default</button>
+            <button id="zoneCancel" class="btn btn-sm">Done</button>
+          </div>
+
+          <div id="phonePanel" class="phone-panel" hidden>
+            <div id="qrBox" class="qr-box" aria-label="QR code for the phone camera page"></div>
+            <div class="phone-text">
+              <h3>Use a phone as the camera</h3>
+              <ol>
+                <li>Press <b>Start</b> here (the dashboard waits for the phone).</li>
+                <li>On the phone, on the <b>same Wi-Fi</b>, scan the code or open <code id="phoneUrl">&hellip;</code></li>
+                <li>Accept the one-time certificate warning, tap <b>Start camera</b>, allow access.</li>
+              </ol>
+              <p id="phoneHint" class="muted small"></p>
+              <p class="muted small">Phone can't connect? Campus/guest Wi-Fi often blocks device-to-device traffic &mdash; use the phone's hotspot or a Windows Mobile Hotspot, and allow the port in the firewall (see README).</p>
+              <p><a id="thisDeviceLink" href="/phone" target="_blank" rel="noopener" class="btn btn-sm">Use this computer's webcam instead</a></p>
+              <p id="phoneState" class="phone-state"></p>
+            </div>
+          </div>
+
+          <div id="panes" class="panes compare">
+            <figure id="paneBefore" class="pane">
+              <figcaption><span class="tag tag-muted">Typical detector</span> boxes and labels only</figcaption>
+              <div class="frame"><img id="imgBefore" alt="Detector-only view" hidden><div class="frame-msg" id="msgBefore"></div></div>
+            </figure>
+            <figure id="paneAfter" class="pane">
+              <figcaption><span class="tag tag-accent">VisionShield AI</span> IDs &middot; trajectories &middot; zones &middot; behaviour &middot; score</figcaption>
+              <div class="frame" id="frameAfter">
+                <img id="imgAfter" alt="VisionShield annotated view" hidden>
+                <canvas id="zoneCanvas" hidden></canvas>
+                <div class="frame-msg" id="msgAfter">Select a source and press Start.</div>
+              </div>
+            </figure>
+          </div>
+          <p class="hint">Box colour = threat level
+            <span class="dot low"></span>LOW <span class="dot medium"></span>MEDIUM <span class="dot high"></span>HIGH
+            &middot; label = <code>#ID class confidence | score LEVEL</code> &middot; line = recent path &middot; red/blue polygon = zone
+            &middot; text under a box = behaviour.</p>
+        </section>
+
+        <aside class="side">
+          <section class="card gauge-card" aria-labelledby="gaugeTitle">
+            <div class="card-head"><h3 id="gaugeTitle">Current threat level <span class="help" data-term="score"></span></h3><span id="sessionInfo" class="muted"></span></div>
+            <div class="gauge">
+              <svg viewBox="0 0 200 112" role="img" aria-label="Threat gauge">
+                <path d="M20.0 100.0 A80 80 0 0 1 52.98 35.28" class="g-seg g-low"/>
+                <path d="M52.98 35.28 A80 80 0 0 1 124.72 23.92" class="g-seg g-med"/>
+                <path d="M124.72 23.92 A80 80 0 0 1 180.0 100.0" class="g-seg g-high"/>
+                <g id="needle" class="needle" style="transform-origin:100px 100px"><path d="M100 100 L100 34" /><circle cx="100" cy="100" r="6"/></g>
+              </svg>
+              <div class="gauge-read"><span id="gaugeScore">0</span><small>/ 100</small></div>
+              <div id="gaugeLevel" class="gauge-level lvl-none">NO ACTIVITY</div>
+            </div>
+            <p id="gaugeWho" class="muted center">Highest-risk object appears here.</p>
+            <div class="counts">
+              <div class="count low"><span id="cntLow">0</span><small>LOW now</small></div>
+              <div class="count medium"><span id="cntMed">0</span><small>MEDIUM now</small></div>
+              <div class="count high"><span id="cntHigh">0</span><small>HIGH now</small></div>
+            </div>
+            <p class="muted small center">The gauge shows the highest score among objects currently in view. LOW 0&ndash;30 &middot; MEDIUM 31&ndash;60 &middot; HIGH 61&ndash;100.</p>
+          </section>
+
+          <section class="card alerts-card" aria-labelledby="alertTitle">
+            <div class="card-head"><h3 id="alertTitle">Live alerts <span class="help" data-term="alert"></span></h3><span class="muted">HIGH first &middot; click for details</span></div>
+            <div id="alertFeed" class="alert-feed" aria-live="polite">
+              <p class="empty">No alerts yet. An alert fires when an object enters a zone or its threat level changes.</p>
+            </div>
+          </section>
+        </aside>
       </div>
-      <p class="hint">Boxes are coloured by threat level: <span class="dot low"></span>LOW
-        <span class="dot medium"></span>MEDIUM <span class="dot high"></span>HIGH.
-        Shaded polygons are monitored zones. Speeds are image-space (px/s), not metres per second.</p>
     </section>
 
-    <section class="panel summary-panel" aria-labelledby="sumTitle">
-      <div class="panel-head"><h2 id="sumTitle">Threat Summary</h2>
-        <span id="sessionInfo" class="muted"></span></div>
-      <div class="counts">
-        <div class="count low"><span id="cntLow">0</span><small>LOW (live)</small></div>
-        <div class="count medium"><span id="cntMed">0</span><small>MEDIUM (live)</small></div>
-        <div class="count high"><span id="cntHigh">0</span><small>HIGH (live)</small></div>
-      </div>
-      <div class="charts">
-        <div class="chart-box"><canvas id="levelChart" aria-label="Events by level"></canvas></div>
-        <div class="chart-box wide"><canvas id="timelineChart" aria-label="Events per hour"></canvas></div>
-      </div>
-      <p class="muted small">Charts show stored event history. "Live" counts are objects on the current frame.</p>
-    </section>
+    <!-- ================= 2. UNDERSTAND ================= -->
+    <section id="understand" class="section">
+      <h2 class="sec-title"><span class="num">2</span> Understand <small>what the system measures for each object, and how the score was built</small></h2>
 
-    <section class="panel telemetry-panel" aria-labelledby="telTitle">
-      <div class="panel-head"><h2 id="telTitle">Object Telemetry</h2>
-        <span id="objInfo" class="muted"></span></div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>ID</th><th>Class</th><th>Conf.</th><th>Speed (px/s)</th><th>Direction</th>
-            <th>Zone</th><th>Dwell (s)</th><th>Score</th><th>Level</th><th>Why</th>
-          </tr></thead>
-          <tbody id="telemetryBody"><tr><td colspan="10" class="empty">No objects</td></tr></tbody>
-        </table>
-      </div>
-    </section>
-
-    <section class="panel events-panel" aria-labelledby="evTitle">
-      <div class="panel-head">
-        <h2 id="evTitle">Event History</h2>
-        <div class="inline-controls">
-          <label>Level
-            <select id="levelFilter">
-              <option value="">All</option><option>HIGH</option><option>MEDIUM</option><option>LOW</option>
-            </select>
-          </label>
-          <button id="refreshBtn" class="btn">Refresh</button>
+      <section class="card" aria-labelledby="telTitle">
+        <div class="card-head"><h3 id="telTitle">Live telemetry <small class="muted">(one row per tracked object &mdash; hover the ? for what each column means)</small></h3><span id="objInfo" class="muted"></span></div>
+        <div class="table-wrap">
+          <table class="telemetry">
+            <thead><tr>
+              <th>ID <span class="help" data-term="track_id"></span></th>
+              <th>Class <span class="help" data-term="class"></span></th>
+              <th>Confidence <span class="help" data-term="confidence"></span></th>
+              <th>Speed <span class="help" data-term="speed"></span></th>
+              <th>Direction <span class="help" data-term="direction"></span></th>
+              <th>Approach <span class="help" data-term="approach"></span></th>
+              <th>Zone <span class="help" data-term="zone_status"></span></th>
+              <th>Dwell <span class="help" data-term="dwell"></span></th>
+              <th>Score <span class="help" data-term="score"></span></th>
+              <th>Level</th>
+              <th>Behaviours <span class="help" data-term="behaviors"></span></th>
+            </tr></thead>
+            <tbody id="telemetryBody"><tr><td colspan="11" class="empty">No objects in view</td></tr></tbody>
+          </table>
         </div>
+      </section>
+
+      <section class="card explain" aria-labelledby="explainTitle">
+        <div class="card-head"><h3 id="explainTitle">Why this score? <small class="muted">(select an object)</small></h3></div>
+        <div class="explain-grid">
+          <div class="obj-list" id="objList" role="listbox" aria-label="Tracked objects">
+            <p class="empty">No objects in view.</p>
+          </div>
+          <div id="explainBody" class="explain-body">
+            <p class="empty">Select an object to see how its score was built from five weighted factors and what it is doing.</p>
+          </div>
+        </div>
+        <p id="formulaLine" class="formula"></p>
+      </section>
+    </section>
+
+    <!-- ================= 3. HISTORY ================= -->
+    <section id="history" class="section">
+      <h2 class="sec-title"><span class="num">3</span> History &amp; recordings <small>everything is stored: events, explanations, and the annotated video</small></h2>
+
+      <div class="two-col">
+        <section class="card" aria-labelledby="recTitle">
+          <div class="card-head"><h3 id="recTitle">Recordings <span class="help" data-term="recording"></span></h3><button id="recRefresh" class="btn btn-sm">Refresh</button></div>
+          <div id="recList" class="rec-list"><p class="empty">No recordings yet. Tick &ldquo;Record session&rdquo; before pressing Start.</p></div>
+          <div id="replayBox" class="replay" hidden>
+            <div class="replay-head"><b id="replayTitle"></b><button id="replayClose" class="btn btn-sm">Close replay</button></div>
+            <img id="replayImg" alt="Recording replay">
+          </div>
+        </section>
+        <section class="card analytics" aria-labelledby="anTitle">
+          <div class="card-head"><h3 id="anTitle">Event analytics</h3></div>
+          <div class="charts">
+            <div class="chart-box"><canvas id="levelChart" aria-label="Events by level"></canvas></div>
+            <div class="chart-box wide"><canvas id="timelineChart" aria-label="Events per hour"></canvas></div>
+          </div>
+        </section>
       </div>
-      <div class="table-wrap tall">
-        <table>
-          <thead><tr>
-            <th>Time</th><th>Level</th><th>Score</th><th>Object</th><th>Zone</th>
-            <th>Movement</th><th>Explanation</th>
-          </tr></thead>
-          <tbody id="eventsBody"><tr><td colspan="7" class="empty">No events yet</td></tr></tbody>
+
+      <section class="card events" aria-labelledby="evTitle">
+        <div class="card-head">
+          <h3 id="evTitle">Event history <small class="muted">(click a row for the full explanation)</small></h3>
+          <div class="inline-controls">
+            <label>Level
+              <select id="levelFilter">
+                <option value="">All</option><option>HIGH</option><option>MEDIUM</option><option>LOW</option>
+              </select>
+            </label>
+            <button id="refreshBtn" class="btn btn-sm">Refresh</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Time</th><th>Level</th><th>Score</th><th>Object</th><th>Zone</th><th>Behaviour</th><th>Reason</th></tr></thead>
+            <tbody id="eventsBody"><tr><td colspan="7" class="empty">No events yet</td></tr></tbody>
+          </table>
+        </div>
+        <div class="pager">
+          <button id="prevBtn" class="btn btn-sm">Prev</button>
+          <span id="pageInfo" class="muted"></span>
+          <button id="nextBtn" class="btn btn-sm">Next</button>
+        </div>
+      </section>
+    </section>
+
+    <!-- ================= 4. GUIDE ================= -->
+    <section id="guide" class="section">
+      <h2 class="sec-title"><span class="num">4</span> Guide &amp; settings <small>what every term means, the current scoring rules, and how this differs from plain detection</small></h2>
+
+      <section class="card" aria-labelledby="glossTitle">
+        <div class="card-head"><h3 id="glossTitle">Glossary &mdash; what each parameter means</h3></div>
+        <div id="glossary" class="glossary"></div>
+      </section>
+
+      <section class="card" aria-labelledby="setTitle">
+        <div class="card-head"><h3 id="setTitle">Current scoring settings <small class="muted">(read-only &middot; change in <code>.env</code> and restart)</small></h3></div>
+        <div id="settingsBody" class="settings"><p class="empty">Loading&hellip;</p></div>
+      </section>
+
+      <section class="card novelty" aria-labelledby="novTitle">
+        <div class="card-head"><h3 id="novTitle">What is different from plain object detection?</h3></div>
+        <table class="compare-table">
+          <thead><tr><th>Question</th><th>Typical detector</th><th>VisionShield AI</th></tr></thead>
+          <tbody>
+            <tr><td>What is visible?</td><td class="yes">&#10003; boxes + labels</td><td class="yes">&#10003; same detector, same accuracy</td></tr>
+            <tr><td>Is it the same object as a moment ago?</td><td class="no">&#10007;</td><td class="yes">&#10003; persistent IDs + trajectories</td></tr>
+            <tr><td>How is it moving?</td><td class="no">&#10007;</td><td class="yes">&#10003; speed, direction, approaching</td></tr>
+            <tr><td>Where is it relative to restricted areas?</td><td class="no">&#10007;</td><td class="yes">&#10003; inside / near / outside, zone entry</td></tr>
+            <tr><td>How long has it been there?</td><td class="no">&#10007;</td><td class="yes">&#10003; dwell time</td></tr>
+            <tr><td>What is it doing?</td><td class="no">&#10007;</td><td class="yes">&#10003; loitering, intrusion, unattended item, crowding</td></tr>
+            <tr><td>How urgent is it &mdash; and why?</td><td class="no">&#10007;</td><td class="yes">&#10003; 0&ndash;100 score with per-factor explanation</td></tr>
+            <tr><td>What needs attention right now?</td><td class="no">&#10007; every box looks alike</td><td class="yes">&#10003; de-duplicated, prioritised alerts + history + recording</td></tr>
+          </tbody>
         </table>
-      </div>
-      <div class="pager">
-        <button id="prevBtn" class="btn">Prev</button>
-        <span id="pageInfo" class="muted"></span>
-        <button id="nextBtn" class="btn">Next</button>
-      </div>
+        <details class="walk">
+          <summary>Suggested 2-minute walkthrough</summary>
+          <ol>
+            <li>Press <b>Quick demo</b>. Left: a typical detector. Right: the same detections with IDs, zones, behaviour and score.</li>
+            <li>Watch the <b>pipeline strip</b> and the <b>gauge</b> react as people enter the shaded zone.</li>
+            <li>In <b>2 Understand</b>, click an object: five weighted factor bars and the behaviours behind its score.</li>
+            <li>Press <b>Edit zone</b> and draw your own restricted area on the live video &mdash; scoring updates instantly.</li>
+            <li>Switch <b>Source</b> to <b>Phone / browser camera</b>, scan the QR code, and run it live on a phone.</li>
+            <li>When you stop, open <b>3 History &amp; recordings</b> to replay or download the annotated video.</li>
+          </ol>
+        </details>
+        <p class="muted small">Detection uses a general pretrained model (no accuracy claims). Scores come from transparent, configurable rules &mdash; engineering defaults, not validated threat probabilities.</p>
+      </section>
     </section>
   </main>
 
-  <footer class="footer">Local prototype &mdash; no authentication; secure before exposing to a network.
-    Tracking IDs identify objects within a session only. Scores use configurable engineering defaults,
-    not validated threat probabilities.</footer>
+  <footer class="footer">Local prototype &mdash; no authentication; secure it before exposing it to a network.
+    Tracking IDs identify objects within a session only. No face or identity recognition.</footer>
 
+  <script src="/static/js/glossary.js"></script>
   <script src="/static/js/dashboard.js"></script>
 </body>
 </html>

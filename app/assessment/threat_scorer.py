@@ -67,6 +67,14 @@ class ThreatWeights:
 
 
 @dataclass(frozen=True)
+class RiskAdjustment:
+    """Context-adjusted object risk (e.g. an unattended bag). Only ever raises the class risk."""
+
+    value: float
+    reason: str
+
+
+@dataclass(frozen=True)
 class ThreatInputs:
     """Raw observations for one object. ``None`` means "unknown / not observable"."""
 
@@ -77,6 +85,7 @@ class ThreatInputs:
     approaching: Optional[bool] = None
     zone_distance_px: Optional[float] = None  # to nearest restricted zone; <= 0 means inside
     dwell_s: Optional[float] = None
+    risk_adjustment: Optional[RiskAdjustment] = None
 
 
 @dataclass(frozen=True)
@@ -153,11 +162,19 @@ class ThreatScorer:
         self.dwell_ref_s = dwell_ref_s
 
     # -- individual factor normalisation -------------------------------------------------
-    def _object_risk(self, class_name: str) -> tuple[float, bool, str]:
+    def class_risk(self, class_name: str) -> float:
+        """Configured (or default) risk of a class, before any context adjustment."""
+        return self.object_risk.get(class_name.strip().lower(), self.default_risk)
+
+    def _object_risk(self, class_name: str, adjustment: Optional[RiskAdjustment] = None
+                     ) -> tuple[float, bool, str]:
         key = class_name.strip().lower()
+        base = self.class_risk(key)
+        if adjustment is not None and adjustment.value > base:
+            return min(1.0, adjustment.value), True, f"raised from {base:.2f} by context: {adjustment.reason}"
         if key in self.object_risk:
-            return self.object_risk[key], True, f"configured risk for '{key}'"
-        return self.default_risk, True, f"default risk (no rule for '{key}')"
+            return base, True, f"configured risk for '{key}'"
+        return base, True, f"default risk (no rule for '{key}')"
 
     def _movement(self, speed: Optional[float], approaching: Optional[bool], diag: float
                   ) -> tuple[float, bool, str]:
@@ -203,7 +220,7 @@ class ThreatScorer:
         diag = float(inputs.frame_diagonal_px)
         w = self.weights
         parts = [
-            ("object_risk", w.object_risk, *self._object_risk(inputs.class_name)),
+            ("object_risk", w.object_risk, *self._object_risk(inputs.class_name, inputs.risk_adjustment)),
             ("confidence", w.confidence, float(inputs.confidence), True, "detector confidence"),
             ("movement", w.movement, *self._movement(inputs.speed_px_s, inputs.approaching, diag)),
             ("proximity", w.proximity, *self._proximity(inputs.zone_distance_px, diag)),

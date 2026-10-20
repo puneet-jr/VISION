@@ -102,7 +102,7 @@ def video_dir(tmp_path: Path) -> Path:
 def settings(video_dir: Path, tmp_path: Path) -> Settings:
     return Settings(_env_file=None, video_dir=video_dir, database_path=tmp_path / "t.db",
                     max_fps=1000.0, alert_cooldown_s=1.0, stream_url="rtsp://user:secret@cam/stream",
-                    zones_file=tmp_path / "missing_zones.json")
+                    zones_file=tmp_path / "missing_zones.json", recordings_dir=tmp_path / "recordings")
 
 
 @pytest.fixture

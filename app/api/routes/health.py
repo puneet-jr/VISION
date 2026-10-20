@@ -19,6 +19,7 @@ def health(db: Database = Depends(get_db), service: SurveillanceService = Depend
         "database": "ok" if db_ok else "unavailable",
         "session_running": service.is_running,
         "model": settings.yolo_model,
+        "model_state": service.status()["model"],
     }
 
 

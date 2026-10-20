@@ -106,9 +106,48 @@ Open <http://127.0.0.1:8000/> for the dashboard and <http://127.0.0.1:8000/docs>
 | Mode | How | Temporal analysis |
 |---|---|---|
 | Recorded video | `POST /api/v1/sessions {"source_type":"video","video_name":"x.mp4"}` | yes |
-| Live camera | `{"source_type":"camera"}` (uses `CAMERA_INDEX`) | yes |
+| Server webcam | `{"source_type":"camera"}` (uses `CAMERA_INDEX`) | yes |
+| Phone / browser camera | `{"source_type":"browser"}` + the `/phone` page streaming to `WS /ws/camera` | yes |
 | IP/RTSP stream | `{"source_type":"stream"}` (uses `STREAM_URL`) | yes |
 | Still image | `POST /api/v1/images/analyze` (multipart `file`) | no |
+
+## Demo mode (what to show a company)
+
+```bash
+python scripts/run_demo.py        # dashboard at http://127.0.0.1:8000 + HTTPS for phones on :8443
+```
+
+The dashboard is built to show *why this is more than object detection*:
+
+* **Compare view** – the same frames side by side: a typical detector (boxes + labels) vs VisionShield (IDs, trajectories, zones, behaviour, score). Switch to a single view with the toggle.
+* **Live pipeline strip** – Detect → Track → Context → Behaviour → Score → Alert, with live counters.
+* **Threat gauge + prioritised alert feed** – HIGH alerts pinned on top; click an alert for its full explanation.
+* **"Why this score?"** – pick any object: five weighted factor bars, behaviour tags, a plain-language sentence, and the formula.
+* **Draw a zone live** – *Edit zone*, click points on the video, *Add zone*. Applies on the next frame and is saved to `config/zones.json`.
+* **Quick demo** button – runs a sample clip with the compare view.
+* **Clear explanations** – numbered sections (Live · Understand · History & recordings · Guide & settings), a live telemetry table, hover **?** help on every parameter, a full glossary, and a read-only panel showing the exact scoring weights and thresholds in use.
+* **Recording** – every session can be saved, replayed and downloaded (see below).
+* **Phone / browser camera** – choose that source, press *Start*, scan the QR code with a phone on the same Wi-Fi, accept the one-time certificate warning, tap *Start camera*. (Phones only allow camera access over HTTPS, hence `run_demo.py`, which creates a self-signed certificate in `data/certs/`. Use `--no-https` to skip it. To use the laptop's own webcam through the browser, open `http://127.0.0.1:8000/phone`.) An IP-camera app can also be used via `STREAM_URL` in `.env`.
+
+Sample clips used while developing (not included in the repo): the public *intel-iot-devkit/sample-videos* files `people-detection.mp4`, `store-aisle-detection.mp4` and `person-bicycle-car-detection.mp4` — check their licences before redistributing; any video you may use works.
+
+### Recording and replay
+
+Tick **Record session** (on by default, `RECORD_SESSIONS`) and the annotated VisionShield view is saved to `data/recordings/session_<id>.avi` (MJPEG, real-time speed, `RECORDING_FPS`; the newest `RECORDING_KEEP` are kept; each is capped at `RECORDING_MAX_MB`). After the session ends, **3 History & recordings** lets you replay it in the browser, download it (plays in VLC / Windows players) or delete it. API: `GET /api/v1/recordings`, `.../{session_id}/replay|download`, `DELETE .../{session_id}`. Works for videos, the server webcam, IP streams and the phone camera.
+
+### Phone camera: if it does not connect
+
+1. Phone and computer on the **same Wi-Fi**; open the `https://<LAN-IP>:8443/phone` address printed by `run_demo.py` (or scan the QR code on the dashboard) and accept the certificate warning.
+2. The phone page can be opened first: it waits for the dashboard's **Start** and reconnects by itself after Wi-Fi blips or screen sleep.
+3. **Campus / guest / hotel Wi-Fi often isolates devices** from each other. Use the phone's hotspot (connect the computer to it) or a Windows Mobile Hotspot.
+4. Allow the port in the firewall if needed (admin PowerShell): `netsh advfirewall firewall add rule name="VisionShield" dir=in action=allow protocol=TCP localport=8443`.
+5. `run_demo.py` prints `[ok] HTTPS server is listening ...` as a local self-check; it cannot detect a firewall or Wi-Fi isolation — only a real phone can.
+
+The detection model loads in the background when the server starts (header shows *Loading model...*, about 10-20 s the first time), so the first **Start** is fast once it reads *Idle*.
+
+### Behaviour recognition
+
+Deterministic, configurable rules (`BEHAVIOR_*` settings) on top of tracking, motion and zone context: **intrusion** (inside a restricted zone), **loitering** (stationary in a zone for N s), **moving fast**, **approaching a zone**, **unattended item** (backpack/suitcase/handbag stationary with nobody nearby) and **crowding** (several people in one zone). Tags appear on the video, in alerts and in the explanation. They feed the score only as a *context-adjusted object risk* (an unattended bag is treated as higher risk than a carried one; crowding adds to a person's risk), so the five-factor formula and its weights are unchanged and every contribution stays explainable. The rules are engineering heuristics, not learned or validated.
 
 ## Threat scoring
 
@@ -118,7 +157,7 @@ Score = 100 × (w1·ObjectRisk + w2·Confidence + w3·Movement + w4·Proximity +
 
 | Factor | Normalised 0–1 from |
 |---|---|
-| Object risk | per-class table (`OBJECT_RISK`); unlisted classes use `DEFAULT_OBJECT_RISK` |
+| Object risk | per-class table (`OBJECT_RISK`), raised by context (unattended item, crowding) |
 | Confidence | detector confidence (not a threat probability) |
 | Movement | `0.6·speed/(SPEED_REF_DIAG_PER_S·frame diagonal) + 0.4·[approaching a restricted zone]` |
 | Proximity | 1 inside a restricted zone, falling linearly to 0 at `ZONE_NEAR_FRACTION` × diagonal |
@@ -142,11 +181,11 @@ Zones are polygons in image coordinates declared against a `reference_size`, the
 cp config/zones.example.json config/zones.json     # PowerShell: Copy-Item
 ```
 
-Edit `polygon` points (`restricted: true` zones drive proximity/approach scoring; `restricted: false` zones are monitored for dwell time only). The dashboard overlay and `GET /api/v1/zones` reflect the file after a server restart.
+Zones can also be drawn in the dashboard (*Edit zone*). Edit `polygon` points (`restricted: true` zones drive proximity/approach scoring; `restricted: false` zones are monitored for dwell time only). The dashboard overlay and `GET /api/v1/zones` reflect the file after a server restart.
 
 ## API summary
 
-`GET /health` · `GET /api/v1/config` · `GET|POST /api/v1/sessions` · `GET /api/v1/sessions/{id}` · `POST /api/v1/sessions/{id}/stop` · `GET /api/v1/objects` · `GET /api/v1/events` (`page`, `page_size`, `level`, `start`, `end`, `session_id`) · `GET /api/v1/events/{id}` · `GET /api/v1/zones` · `GET /api/v1/analytics/summary` · `WS /ws/events` — plus `GET /api/v1/sources`, `GET /api/v1/stream` (MJPEG), `GET /api/v1/frame`, `POST /api/v1/images/analyze`, `POST /api/v1/videos/upload`. Errors use `{"error": {"code", "message"}}`.
+`GET /health` · `GET /api/v1/config` · `GET|POST /api/v1/sessions` · `GET /api/v1/sessions/{id}` · `POST /api/v1/sessions/{id}/stop` · `GET /api/v1/objects` · `GET /api/v1/events` (`page`, `page_size`, `level`, `start`, `end`, `session_id`) · `GET /api/v1/events/{id}` · `GET /api/v1/zones` · `GET /api/v1/analytics/summary` · `WS /ws/events` — plus `GET /api/v1/sources`, `GET /api/v1/stream?view=full|plain` (MJPEG), `GET /api/v1/frame`, `PUT /api/v1/zones`, `POST /api/v1/zones/reset`, `GET /api/v1/network`, `GET /phone`, `WS /ws/camera`, `GET /api/v1/recordings` (+ replay/download/delete), `POST /api/v1/images/analyze`, `POST /api/v1/videos/upload`. Errors use `{"error": {"code", "message"}}`.
 
 ## Tests
 
@@ -156,7 +195,7 @@ python -m pytest
 
 The suite (unit + integration) mocks the detector, tracker input and video source, so it needs no webcam, GPU or model download. Covered: score calculation and 0/30/31/60/61/100 boundaries, weight/factor validation, zone membership and entry, movement edge cases, persistence, alert de-duplication, event persistence/pagination/filtering, health and validation endpoints, WebSocket events, and session stop releasing the camera and worker thread.
 
-Verification status of this repository: the test suite passes (122 tests; the dataset runners are exercised only on tiny synthetic datasets, never on MOT17/VisDrone/UCF-Crime), and a manual smoke test with the real `yolo11n.pt` model + ByteTrack on a generated pan video and one photo ran end-to-end (detections, track IDs, scores, zone entries, stored events, annotated frames; ~6 fps on a CPU). A webcam was not tested, and the dashboard was driven in real Chrome (Playwright): start/stop, live feed, telemetry, charts, event filter and image mode all worked (screenshots in `outputs/demo/`, git-ignored; that run exposed and fixed a stuck Start button and a broken-image placeholder).
+Verification status of this repository: the test suite passes (162 tests; the dataset runners are exercised only on tiny synthetic datasets, never on MOT17/VisDrone/UCF-Crime), and a manual smoke test with the real `yolo11n.pt` model + ByteTrack on a generated pan video and one photo ran end-to-end (detections, track IDs, scores, zone entries, stored events, annotated frames; ~6 fps on a CPU). A webcam was not tested, and the dashboard was driven in real Chrome (Playwright): start/stop, live feed, telemetry, charts, event filter and image mode all worked (screenshots in `outputs/demo/`, git-ignored; that run exposed and fixed a stuck Start button and a broken-image placeholder).
 
 ## Offline dataset evaluation (optional)
 
@@ -177,5 +216,6 @@ Implemented runners for **MOT17** (tracking via `motmetrics`), **VisDrone2019-DE
 * Pretrained COCO classes only; object risk is a hand-set table. No face/identity recognition or re-identification by design.
 * Zone checks use the box centroid; no camera calibration, so no real-world distances or speeds.
 * Scoring is deterministic and unvalidated; future work: labelled scenarios for tuning, learned scoring, Deep SORT / BoT-SORT adapters (the tracker is behind the `ObjectTracker` interface), per-camera zone editor in the UI.
-#   V I S I O N  
+#   V I S I O N 
+ 
  

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>VisionShield Camera</title>
+  <link rel="icon" href="data:,">
+  <style>
+    :root { color-scheme: dark; --bg:#0b0f14; --card:#141b24; --border:#243040; --text:#e8eef5; --muted:#8a99ab; --accent:#4f8cff; --ok:#34c759; --bad:#ff453a; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+      font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; }
+    header { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+    header h1 { margin: 0; font-size: 18px; } header p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+    main { flex: 1; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; max-width: 560px; width: 100%; margin: 0 auto; }
+    .video { position: relative; background: #000; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); aspect-ratio: 3 / 4; }
+    video { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .badge { position: absolute; top: 10px; left: 10px; padding: 4px 10px; border-radius: 999px; font-size: 13px; background: rgba(0,0,0,.6); }
+    .badge.live { color: var(--ok); } .badge.err { color: var(--bad); }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; }
+    button, select { font: inherit; border-radius: 10px; border: 1px solid var(--border); background: var(--card); color: var(--text); padding: 12px 16px; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; flex: 1; }
+    button.stop { background: #5b1a17; border-color: var(--bad); flex: 1; }
+    button:disabled { opacity: .45; }
+    .note { color: var(--muted); font-size: 13px; }
+    .msg { padding: 10px 12px; border-radius: 10px; background: var(--card); border: 1px solid var(--border); font-size: 14px; }
+    .msg.bad { border-color: var(--bad); color: #ffb1ac; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>VisionShield &middot; Camera</h1>
+    <p>This device streams its camera to the VisionShield dashboard for analysis.</p>
+  </header>
+  <main>
+    <div class="video"><video id="preview" autoplay playsinline muted></video><span id="badge" class="badge">Camera off</span></div>
+    <div id="msg" class="msg" hidden></div>
+    <div class="row">
+      <select id="facing" aria-label="Camera">
+        <option value="environment">Back camera</option>
+        <option value="user">Front camera</option>
+      </select>
+    </div>
+    <div class="row">
+      <button id="startBtn" class="primary">Start camera</button>
+      <button id="stopBtn" class="stop" disabled>Stop</button>
+    </div>
+    <p class="note">First press <b>Start</b> on the dashboard (source: Phone / browser camera), then start here.
+      Keep this page open and the screen awake. Video is sent only to this server on your network.</p>
+  </main>
+  <script src="/static/js/phone.js"></script>
+</body>
+</html>

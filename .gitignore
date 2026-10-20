@@ -15,3 +15,5 @@ config/zones.json
 outputs/
 .idea/
 .vscode/
+data/certs/
+data/recordings/

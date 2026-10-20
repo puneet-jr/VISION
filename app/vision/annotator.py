@@ -46,6 +46,11 @@ def draw_objects(image: np.ndarray, objects: Sequence[ObjectState],
             pts = np.array(obj.motion.trajectory, dtype=np.int32)
             cv2.polylines(image, [pts], False, color, 1, cv2.LINE_AA)
 
+        if obj.behaviors:  # what the object is doing, under the box
+            tag = " / ".join(b.label for b in obj.behaviors[:2]).upper()
+            cv2.putText(image, tag, (x1 + 2, min(image.shape[0] - 4, y2 + 14)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1, cv2.LINE_AA)
+
         idtxt = f"#{d.track_id} " if d.track_id is not None else ""
         label = f"{idtxt}{d.class_name} {d.confidence:.2f}"
         if obj.assessment:
@@ -53,6 +58,21 @@ def draw_objects(image: np.ndarray, objects: Sequence[ObjectState],
         (tw, th), base = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
         top = max(0, y1 - th - base - 4)
         cv2.rectangle(image, (x1, top), (x1 + tw + 6, top + th + base + 4), color, -1)
+        cv2.putText(image, label, (x1 + 3, top + th + 1), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                    (255, 255, 255), 1, cv2.LINE_AA)
+
+
+def draw_plain(image: np.ndarray, objects: Sequence[ObjectState]) -> None:
+    """What a typical detector shows: a box, a class label and a confidence. Nothing else -
+    no track ids, trajectories, zones or threat information."""
+    for obj in objects:
+        d = obj.detection
+        x1, y1, x2, y2 = (int(v) for v in d.bbox)
+        cv2.rectangle(image, (x1, y1), (x2, y2), (235, 235, 235), 2)
+        label = f"{d.class_name} {d.confidence:.2f}"
+        (tw, th), base = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+        top = max(0, y1 - th - base - 4)
+        cv2.rectangle(image, (x1, top), (x1 + tw + 6, top + th + base + 4), (90, 90, 90), -1)
         cv2.putText(image, label, (x1 + 3, top + th + 1), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
                     (255, 255, 255), 1, cv2.LINE_AA)
 

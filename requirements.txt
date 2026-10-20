@@ -19,3 +19,6 @@ motmetrics>=1.4
 # Testing
 pytest>=8.0
 httpx>=0.26
+
+# Self-signed certificate for the phone-camera HTTPS server (scripts/run_demo.py)
+cryptography>=42
